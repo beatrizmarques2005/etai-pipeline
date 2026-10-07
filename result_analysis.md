@@ -81,6 +81,46 @@ development set only.*
 
 **Best model:** Decision Tree, 0.675 ± 0.018, by a margin smaller than its standard deviation.
 
+### Week 5 — Hyperparameter tunning
+---
+
+**What changed:** ...
+
+| Model | Mean test accuracy | vs Week 4 |
+|---|---:|---:|
+| ... | ... | ... |
+
+
+| Model | Default: CV mean ± std | Tuned: nested CV mean ± std | Tuning score (best trial) | Optimism | Chosen hyperparameters |
+|---|---|---|---|---|---|
+| Decision tree | ... | ... | ... | ... | ... |
+| Logistic regression | ... | ... | ... | ... | ... |
+| Random forest | ... | ... | ... | ... | ... |
+
+**Challenge answers:**
+- Which models gained from tuning, and is the gain larger than the fold-to-fold std?
+- Did tuning change which model is best? Which number would you report for your best model, and why?
+
+**Findings:** ...
+
+**Best model:** ...
+
+<!--
+
+## Challenges
+
+Start with 1 and 2 (they fill the README table); the rest are for going further. For every change, keep the rules: development set only, whole pipeline, same folds.
+
+1. **Tune logistic regression.** Add a `logistic_regression` search space to `config.yaml`. Its main hyperparameter is the regularisation strength `C` (smaller = stronger regularisation): search it on a **log scale**, e.g. 0.0001 to 100. Does tuning help LR as much as it helped the tree? Why might a linear model have less to gain?
+2. **Tune the random forest.** Add a `random_forest` search space: `n_estimators`, `max_depth` (include `null` - YAML for `None` - as an option: use `categorical`), `min_samples_leaf`, `max_features` (e.g. `["sqrt", "log2", 0.5, 1.0]`). A forest makes every trial ~100× slower: start with `n_trials: 15`, set `cv.n_jobs: -1`, and keep `n_estimators` modest while tuning. Compare the depth the forest chooses with the depth the tree chose - does it match your answer to Section 2.4?
+
+**Going further**:
+
+3. **Tune the preprocessing too.** Add `prep__numeric__impute__strategy: {type: categorical, choices: ["median", "mean"]}` to the tree's search space. Why is this still leak-free? Would it still be leak-free if the preprocessing were fitted once, outside the trials (the caching note in Section 5)?
+4. **Change what "best" means.** Set `cv.scoring` to `"balanced_accuracy"` or `"f1"` and tune again. Do the chosen hyperparameters change? What happens to recall of the positive class, and to the false positive rates in the fairness audit?
+
+-->
+
 <!-- TEMPLATE
 ### Week N — <topic>
 ---
