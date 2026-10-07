@@ -1,11 +1,10 @@
-# Baseline pipeline configuration.
-
 data:
   path: "data/compas_two_year_recidivism.csv"
   target: "two_year_recid"
-  sensitive_attr: "race"          # excluded from model features, used only to audit fairness
-  drop_columns: ["id", "decile_score", "score_text"]
+  sensitive_attr: "race"                            # never a feature; used only for the fairness report
+  drop_columns: ["id", "decile_score", "score_text"]  # kept in the data, never used as features
 
+# Locked test set: never used to fit, tune or choose anything. Do not change once set.
 test_set:
   size: 0.2
   random_state: 42
@@ -14,12 +13,13 @@ cv:
   n_splits: 5
   shuffle: true
   random_state: 42
-  scoring: "accuracy"   # one metric for now, so numbers compare directly with weeks 2-3
-  n_jobs: 1             # folds fitted in parallel; -1 = all cores (only pays off for slow models, e.g. random forest)
+  scoring: "accuracy"
+  n_jobs: 1                                         # -1 = all CPU cores
 
 diagnostics:
   id_column: "id"
   numeric_text_columns: ["priors_count", "prior_offenses"]
+  # "nan" catches real NaNs turned into text by the category cleanup.
   placeholder_tokens: ["-", "?", "n/a", "N/A", "na", "NA", "", "nan"]
 
   validity_rules:
@@ -49,22 +49,15 @@ diagnostics:
       low: "Low"
       medium: "Medium"
       high: "High"
-
   redundant_columns: ["prior_offenses", "age_in_months", "juvenile_total"]
 
 preprocessing:
-  # options: "onehot" | "ordinal" | "count" | "target"
-  encoder: "target"      # compact (1 column per feature) and informative; sklearn's version cross-fits, so no leak
-  # options: "none" | "standard" | "minmax" | "robust"
-  scaler: "robust"       # median/IQR: the few extreme counts (e.g. priors_count) don't set the scale for everyone
+  encoder: "target"                                 # onehot | ordinal | count | target
+  scaler: "robust"                                  # none | standard | minmax | robust
   numeric_features: ["age", "juv_fel_count", "juv_misd_count", "juv_other_count", "priors_count"]
   categorical_features: ["sex", "age_cat", "c_charge_degree"]
-  # MNAR-diagnosed columns (see diagnostics above / the EDA notebook's mechanism test) get an
-  # extra "_was_missing" flag alongside their imputed value, so the model can still see the
-  # pattern even though the fill itself is just a median/mode
-  mnar_indicator_sources: ["priors_count", "c_charge_degree"]
-  # seed for the target encoder's internal cross-fitting (week 4: sklearn's TargetEncoder)
-  random_state: 42
+  mnar_indicator_sources: ["priors_count", "c_charge_degree"]   # get a <col>_was_missing flag
+  random_state: 42                                  # target encoder's internal folds
   imputation:
     numeric_strategy: "median"
     categorical_strategy: "most_frequent"
@@ -90,6 +83,18 @@ model:
     n_estimators: 300
     random_state: 42   # forests are random (bootstrap rows + random feature subsets): fix the seed
     n_jobs: -1         # use every CPU core -- the trees are independent, so they train in parallel
+
+tuning:
+  enabled: true
+  n_trials: 30
+  n_splits: 5                                       # folds that score each candidate
+  random_state: 42                                  # seeds the sampler and those folds
+  # Keys are Pipeline parameter names. Types: int / float (low, high, log) or categorical (choices).
+  search_spaces:
+    decision_tree:
+      model__max_depth: {type: int, low: 1, high: 20}
+      model__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
+      model__criterion: {type: categorical, choices: ["gini", "entropy"]}
 
 output:
   results_dir: "results"
