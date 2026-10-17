@@ -120,7 +120,16 @@ All rows from `python main.py` with that `model.type` (accuracy, 5-fold CV on th
 
 Corrected paired t-test (Nadeau & Bengio, `test_train_ratio=1/4`), tuned AdaBoost vs tuned decision tree: +0.010, 4/5 folds, t = 1.68, p = 0.17; vs logistic regression: +0.010, 3/5 folds, t = 1.01, p = 0.37.
 
-**Which model, and is its lead real?** AdaBoost has the best nested CV accuracy (0.682), but its lead is about 0.001 over the random forest, 0.003 over the oblique forest and 0.010 over the tuned tree and logistic regression, all smaller than the fold-to-fold std (≈0.015), and the corrected paired t-test is not significant against either week-5 model. The tuned ensembles are effectively tied, and all five models end near 0.67–0.68, which suggests the limit is the information in these features rather than the model. **Do the hyperparameters fit each model?** Yes: AdaBoost chose shallow trees (depth 4) with a small learning rate and many rounds, i.e. weak learners combined slowly; the random forest kept deep trees (max_depth 22) and let averaging control variance, only regularising the leaves (min 42 samples); the single tree, with nothing to average its errors, needed heavy regularisation (depth 6, leaves of 101). Tuning mattered most where the defaults overfit (forest gaps of +0.08 and +0.11 fell to ≈+0.01). **What would I report?** If an ensemble is chosen, AdaBoost's nested CV accuracy, 0.682 ± 0.017, not the best-trial score (0.684), which is optimistically biased by the selection; given the tie, logistic regression (0.672 ± 0.013) remains a simpler, more interpretable alternative.
+**Which model, and is its lead real?** 
+
+AdaBoost has the best nested CV accuracy (0.682), but its lead is about 0.001 over the random forest, 0.003 over the oblique forest and 0.010 over the tuned tree and logistic regression, all smaller than the fold-to-fold std (≈0.015). The tuned ensembles are effectively tied, and all five models end near 0.67–0.68, which suggests the _limit is the information in these features rather than the model_. 
+
+**Do the hyperparameters fit each model?** 
+
+Yes!
+* AdaBoost chose shallow trees (depth 4) with a small learning rate and many rounds, i.e. weak learners combined slowly;
+* The random forest kept deep trees (max_depth 22) and let averaging control variance, only regularising the leaves (min 42 samples);
+* The single tree, with nothing to average its errors, needed heavy regularisation (depth 6, leaves of 101). 
 
 <!--
 
