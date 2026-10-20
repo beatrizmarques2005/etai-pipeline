@@ -42,3 +42,4 @@ def save_run(results_dir: str, run: str, config: dict, report_text: str) -> str:
     with open(path, "w") as f:
         f.write(header + report_text)
     return path
+
