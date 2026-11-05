@@ -33,7 +33,7 @@ from sklearn.random_projection import SparseRandomProjection
 from sklearn.tree import DecisionTreeClassifier
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent.parent / "data"      # helpers live in src/, the data in data/
 
 # config.yaml, as it was at the end of last week
 CONFIG = yaml.safe_load("""
