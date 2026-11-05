@@ -253,4 +253,21 @@ Start with 1 and 2 (they fill the README table); the rest are for going further.
 **Going further**:
 
 3. **Tune the preprocessing too.** Add `prep__numeric__impute__strategy: {type: categorical, choices: [\"median\", \"mean\"]}` to the tree's search space. Why is this still leak-free? Would it still be leak-free if the preprocessing were fitted once, outside the trials (the caching note in Section 5)?
-4. **Change what \"best\" means.** Set `cv.scoring` to `\"balanced_accuracy\"` or `\"f1\"` and tune again. Do the chosen hyperparameters change? What happens to recall of the positive class, and to the false positive rates in the fewer-run...
+4. **Change what \"best\" means.** Set `cv.scoring` to `\"balanced_accuracy\"` or `\"f1\"` and tune again. Do the chosen hyperparameters change? What happens to recall of the positive class, and to the false positive rates in the fairness audit?
+
+-->
+
+<!-- TEMPLATE
+### Week N — <topic>
+---
+
+**What changed:** ...
+
+| Model | Mean test accuracy | vs Week N-1 |
+|---|---:|---:|
+| ... | ... | ... |
+
+**Findings:** ...
+
+**Best model:** ...
+-->
