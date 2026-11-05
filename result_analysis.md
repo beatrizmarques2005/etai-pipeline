@@ -195,6 +195,52 @@ Corrected paired t-test (Nadeau & Bengio, `test_train_ratio=1/4`) on the scorebo
 
 **Best model:** HistGradientBoosting, nested CV ROC-AUC **0.728 ± 0.016** — tied with gradient boosting and AdaBoost, so any of the three is defensible; the number to report is the nested one, not the best-trial 0.729.
 
+### Week 8 — XGBoost and feature selection
+---
+
+**What changed:** a new model, `xgboost` (`XGBClassifier`, gradient boosting with extra brakes inside each split), and a new learned pipeline step, `VoteSelector` (a random forest, gradient boosting and an L1 logistic regression each vote for features; features with at least `min_votes` votes are kept). The selector sits between preprocessing and the model, so it is re-fitted on the training rows of every fold. With tuning on, `select__min_votes` (1–3) is tuned together with the model and assessed by nested CV. XGBoost is now the model `main.py` runs. `python main.py` was run twice with tuned XGBoost, once with `feature_selection.enabled: false` and once with `true` (ROC-AUC, 5-fold CV on the development set; 30 Optuna trials, 5 inner folds; nested CV = 5 outer folds; the test set was not used). The scoreboard (Week 7 rows plus these two runs) is saved in [`data/prerun/week8_runs.csv`](data/prerun/week8_runs.csv).
+
+#### Scoreboard
+
+No-model floor (dummy, same folds): **0.500**.
+
+| Model | Untuned: CV mean ± std (gap) | Tuned: nested CV mean ± std (gap) | Tuning score (best trial) | `min_votes` | Features kept |
+|---|---|---|---|---|---|
+| XGBoost, no selection | 0.724 ± 0.017 (+0.034) | **0.728 ± 0.015** (+0.011) | 0.729 | — | all 10 |
+| XGBoost + `VoteSelector` | 0.721 ± 0.013 (+0.027) | 0.725 ± 0.013 (+0.005) | 0.726 | 1 (chosen in all 5 outer folds and on all development rows) | 2 of 10: `age`, `priors_count` |
+| *Week 7 best: HistGradientBoosting* | *0.717 ± 0.020* | *0.728 ± 0.016* | *0.729* | — | all 10 |
+
+Chosen hyperparameters, no selection: `n_estimators=94`, `learning_rate=0.108`, `max_depth=7`, `min_child_weight=28`, `subsample=0.85`, `colsample_bytree=0.56`, `reg_lambda=0.24`, `reg_alpha=0.002`, `gamma=4.1`. With selection: `n_estimators=92`, `learning_rate=0.23`, `max_depth=3`, `min_child_weight=1.8`, `subsample=0.57`, `colsample_bytree=0.63`, `reg_lambda=0.08`, `reg_alpha=0.05`, `gamma=4.0`, `min_votes=1`.
+
+Selection metrics, tuned (nested CV): without selection accuracy 0.680, balanced accuracy 0.670, F1 0.614, PR-AUC 0.692; with selection 0.678, 0.668, 0.612, 0.689.
+
+#### Corrected paired t-tests (Nadeau & Bengio, `test_train_ratio=1/4`, same folds)
+
+| Comparison (a vs b) | Mean diff (a − b) | Folds a wins | t | p |
+|---|---:|---:|---:|---:|
+| Tuned XGBoost **with** vs **without** selection | −0.003 | 2/5 | −0.89 | 0.42 |
+| Untuned XGBoost with vs without selection | −0.003 | 2/5 | −0.46 | 0.67 |
+| Tuned XGBoost without selection vs Week 7 HistGradientBoosting | −0.0003 | 2/5 | −0.23 | 0.83 |
+| Tuned XGBoost without selection vs Week 7 gradient boosting | +0.0004 | 3/5 | 0.28 | 0.79 |
+| Tuned XGBoost with selection vs Week 7 HistGradientBoosting | −0.003 | 2/5 | −0.89 | 0.42 |
+
+#### Which features does `VoteSelector` keep, and what does `min_votes` do?
+
+Fitted on all development rows, only two features get any votes: `age` and `priors_count` (3 of 3 votes each). Every other feature gets 0 votes (the juvenile counts, `sex`, `c_charge_degree`, and the two missing-value indicators), except that `age_cat` gets 1 vote in one training fold (fold 2). So `min_votes=2` and `min_votes=3` keep the same two features, and `min_votes=1` keeps them too, except in that fold, where it adds `age_cat`. Untuned XGBoost scores 0.7206 / 0.7207 / 0.7208 for `min_votes` 1 / 2 / 3, i.e. the setting makes no real difference here. The nested CV picked `min_votes=1` in all five outer folds, but because 1, 2 and 3 are almost the same choice on this data, that is more like a tie than a real preference.
+
+#### Findings
+
+- **XGBoost ties with the other boosters.** Tuned XGBoost (0.728 ± 0.015) is level with HistGradientBoosting (0.728), gradient boosting (0.727) and AdaBoost (0.727): differences of 0.0004 or less, p = 0.79–0.83. As in Weeks 6 and 7, the model family is not what limits the score.
+- **Selection did not improve the score, but it cost little.** With selection the model is 0.003 lower (0.725 vs 0.728), with a p-value of 0.42, so we cannot call it worse; the difference is within fold-to-fold noise (std ≈ 0.015). The test cannot prove the two are equal, but a model with 2 of 10 features is clearly *almost as good*.
+- **A two-feature model is almost as good as the ten-feature model.** `age` and `priors_count` carry nearly all of the usable signal. That means the other eight columns (sex, charge degree, juvenile counts, ...) add little for this model. A smaller model is easier to explain and cheaper to run.
+- **The train–validation gap shrinks with selection** (+0.005 vs +0.011 tuned; +0.027 vs +0.034 untuned) and the fold-to-fold std is a little lower (0.013 vs 0.015), so the selected model overfits less. This is a small effect.
+- **Why selection helped less than in the notebook.** In the notebook's test, 20 columns of random noise were added and selection recovered the lost score. COMPAS has only 10 columns, none of them noise, so there was almost nothing to remove, and removing 8 weak-but-real columns costs a little signal.
+- **Fairness:** the XGBoost model (no selection, 0.5 threshold) has an out-of-fold false-positive rate of 0.30 for African-American and 0.16 for Caucasian defendants (0.30 / 0.17 with selection), below COMPAS (0.45 / 0.23) but still about twice as high for African-American defendants. Selection does not change this picture: the selected features include `age` and `priors_count`, and the race gap comes from how those relate to race in the data, not from the removed columns.
+
+**Would I keep selection on?** On this data, it is a judgement call. Selection gives a model that is as good within noise and uses 2 features instead of 10, so it is the better choice if simplicity and explainability matter (and a stable cheap model is useful). If we only want the highest ROC-AUC, the no-selection model is 0.003 ahead, although not significantly. The cost of keeping it on is about three extra model fits per fold. I would keep it on in the pipeline (the config switch makes it easy to turn off), and not claim it improves accuracy.
+
+**Best model:** tuned XGBoost without selection, nested CV ROC-AUC **0.728 ± 0.015**, tied with HistGradientBoosting (0.728), gradient boosting and AdaBoost, so any is defensible; XGBoost with selection (0.725 ± 0.013, 2 features) is the simplest equally good option.
+
 <!--
 
 ## Challenges
@@ -207,21 +253,4 @@ Start with 1 and 2 (they fill the README table); the rest are for going further.
 **Going further**:
 
 3. **Tune the preprocessing too.** Add `prep__numeric__impute__strategy: {type: categorical, choices: [\"median\", \"mean\"]}` to the tree's search space. Why is this still leak-free? Would it still be leak-free if the preprocessing were fitted once, outside the trials (the caching note in Section 5)?
-4. **Change what \"best\" means.** Set `cv.scoring` to `\"balanced_accuracy\"` or `\"f1\"` and tune again. Do the chosen hyperparameters change? What happens to recall of the positive class, and to the false positive rates in the fairness audit?
-
--->
-
-<!-- TEMPLATE
-### Week N — <topic>
----
-
-**What changed:** ...
-
-| Model | Mean test accuracy | vs Week N-1 |
-|---|---:|---:|
-| ... | ... | ... |
-
-**Findings:** ...
-
-**Best model:** ...
--->
+4. **Change what \"best\" means.** Set `cv.scoring` to `\"balanced_accuracy\"` or `\"f1\"` and tune again. Do the chosen hyperparameters change? What happens to recall of the positive class, and to the false positive rates in the fewer-run...
