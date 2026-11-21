@@ -54,7 +54,7 @@ Category cleanup, domain-rule checks, duplicate removal, median/mode imputation 
 
 | Model | CV accuracy | Mean gap | F1 (class 1) | vs Week 3 |
 |---|---:|---:|---:|---:|
-| Logistic Regression | 0.672 �� 0.013 | +0.003 | 0.58 | +0.002 |
+| Logistic Regression | 0.672 ± 0.013 | +0.003 | 0.58 | +0.002 |
 | Decision Tree | **0.675 ± 0.018** | +0.010 | 0.60 | 0.000 |
 | Random Forest (untuned, 300 trees) | 0.650 ± 0.018 | **+0.083** | 0.60 | – |
 
