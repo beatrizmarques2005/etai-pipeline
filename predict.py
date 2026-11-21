@@ -1,10 +1,7 @@
 """
-Predicts new data with the model saved by `main.py`:
+Predicts a new CSV with the model saved by `main.py` (one row out per row in: id, probability, prediction):
 
     python predict.py data/compas_new_people.csv predictions.csv
-
-new CSV -> the same cleaning as training (no rows dropped) -> features -> the saved pipeline
--> one row per input row: id, probability, prediction.
 """
 import argparse
 
