@@ -1,12 +1,8 @@
 """
 Entry point: `python main.py`.
 
-load config -> load and clean data -> drop duplicate rows (training only) -> features/target
--> lock the test set -> cross-validate the pipeline (preprocessing, feature selection if enabled,
-model) on the development set (several metrics, and the no-model floor on the same folds)
--> [if tuning is enabled: nested CV of the tuning procedure, then tuning on all development rows]
--> out-of-fold reports -> refit on all development rows -> scoreboard + full report
--> the refit pipeline saved to disk, for `predict.py`
+config -> clean data -> lock test set -> CV (and nested-CV tuning if enabled) on the development
+set -> reports -> refit on all development rows -> scoreboard, report and saved model.
 """
 import os
 import shutil
@@ -44,7 +40,7 @@ def main():
     mnar_sources = config["preprocessing"].get("mnar_indicator_sources", [])
     X, y, extras = split_features_target(df_clean, config["data"], mnar_sources)
 
-    # From here on, every decision uses the development set only; the test set stays locked.
+    # From here on only the development set is used; the test set stays locked.
     X_dev, X_test, y_dev, y_test, extras_dev, extras_test = split_dev_test(
         X, y, extras,
         test_size=config["test_set"]["size"],
@@ -97,7 +93,7 @@ def main():
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         inner_cv = StratifiedKFold(n_splits=tuning_config["n_splits"], shuffle=True, random_state=tuning_seed)
 
-        # Honest estimate on the same outer folds; its out-of-fold probabilities feed the reports.
+        # Honest estimate of the tuned model; its out-of-fold probabilities feed the reports.
         print(f"\nTuning ({n_trials} trials, nested CV) ... this takes a while", flush=True)
         final_scores, oof_proba = nested_cross_validate(
             pipeline, X_dev, y_dev, cv, inner_cv, scorers, selection_metric,
@@ -108,7 +104,7 @@ def main():
         report += "\n\n" + cv_report(final_scores, metrics, selection_metric,
                                      "Nested cross-validation (the tuning procedure, estimated honestly)")
 
-        # The hyperparameters that are kept: the same procedure, once, on all development rows.
+        # Hyperparameters kept: the same tuning, once, on all development rows.
         pipeline, study = tune_pipeline(pipeline, X_dev, y_dev, inner_cv, scorers[selection_metric],
                                         search_space, n_trials, tuning_seed, n_jobs=n_jobs)
         print("  Chosen hyperparameters:")
@@ -151,10 +147,9 @@ def main():
     shutil.rmtree(cache_dir, ignore_errors=True)
     path = save_run(config.get("output", {}).get("results_dir", "results"), run, config, report)
 
-    # The final fitted pipeline: what predict.py loads to predict new data.
     model_path = config.get("output", {}).get("model_path", "models/model.joblib")
     os.makedirs(os.path.dirname(model_path) or ".", exist_ok=True)
-    pipeline.set_params(memory=None)                # the cache folder was deleted; the saved model doesn't need it
+    pipeline.set_params(memory=None)                # the cache folder is gone
     joblib.dump(pipeline, model_path)
     print(f"\n{refit}\nFull report (per-fold tables, tuning, confusion matrix, fairness): {path}"
           f"\nModel saved for predict.py: {model_path}")
