@@ -1,7 +1,4 @@
-"""
-Model construction: the model alone (`build_model`), the feature-selection step
-(`VoteSelector`) and preprocessing + selection + model as one estimator (`build_pipeline`).
-"""
+"""Model construction: `build_model`, the `VoteSelector` step and `build_pipeline`."""
 import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.dummy import DummyClassifier
@@ -21,20 +18,15 @@ from src.preprocessing import build_preprocessor
 
 
 def adaboost(max_depth: int = 1, **params):
-    """
-    AdaBoost over decision trees of depth `max_depth` (1 = stumps); `params` go to
-    AdaBoostClassifier. The trees' depth is tuned as `model__estimator__max_depth`.
-    """
+    """AdaBoost over trees of depth `max_depth` (1 = stumps); tuned as `model__estimator__max_depth`."""
     return AdaBoostClassifier(estimator=DecisionTreeClassifier(max_depth=max_depth), **params)
 
 
 def oblique_random_forest(n_estimators: int = 100, n_components: int = 10, density="auto",
                           random_state=None, n_jobs=None, **tree_params):
     """
-    A forest of oblique trees: each tree is fit on a bootstrap sample, on `n_components`
-    random sparse linear combinations of the features (a new set per tree), so its splits are
-    hyperplanes. `tree_params` go to every tree (`max_features` defaults to "sqrt"). Tuned as
-    `model__estimator__tree__<param>` and `model__estimator__project__<param>`.
+    Forest of oblique trees: each tree splits on `n_components` random sparse linear combinations
+    of the features. `tree_params` go to every tree (`max_features` defaults to "sqrt").
     """
     tree_params.setdefault("max_features", "sqrt")
     oblique_tree = Pipeline([
@@ -72,9 +64,8 @@ def build_model(model_config: dict):
 
 class VoteSelector(SelectorMixin, BaseEstimator):
     """
-    Keeps the features chosen by at least `min_votes` of three models, fitted on the training
-    rows only: a random forest and gradient boosting vote for features with above-average
-    importance, an L1-penalised logistic regression for features it doesn't shrink to zero.
+    Keeps features with at least `min_votes` votes from a random forest, gradient boosting
+    (above-average importance) and an L1 logistic regression (non-zero coefficient).
     """
 
     def __init__(self, min_votes: int = 2, random_state=None):
@@ -98,12 +89,8 @@ class VoteSelector(SelectorMixin, BaseEstimator):
 def build_pipeline(preprocessing_config: dict, model_config: dict, selection_config: dict = None,
                    memory=None) -> Pipeline:
     """
-    The estimator that is cross-validated, tuned and refit: preprocessing, feature selection
-    (if `selection_config["enabled"]`) and model as one Pipeline, so every learned step is
-    re-fit on the training part of each fold. Step names address hyperparameters from outside
-    (`model__max_depth`, `select__min_votes`). `memory` (a folder) caches the fitted
-    preprocessing and selection steps: a fit on the same rows with the same settings is
-    reused instead of repeated, so tuning the model doesn't refit them in every trial.
+    Preprocessing, optional feature selection and model as one Pipeline, so every learned step
+    is re-fit per fold. `memory` (a folder) caches the fitted prep/selection steps across trials.
     """
     steps = [("prep", build_preprocessor(preprocessing_config))]
     if selection_config and selection_config.get("enabled", False):
