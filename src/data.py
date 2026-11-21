@@ -1,10 +1,4 @@
-"""
-Data
-----
-
-Functions for loading the raw dataset.
-
-"""
+"""Loading the raw dataset."""
 import pandas as pd
 
 
