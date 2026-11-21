@@ -1,11 +1,4 @@
-"""
-Data diagnostics
-----------------
-
-Generic, config-driven techniques for finding what's actually wrong with a dataset before preprocessing touches it: a tested missingness mechanism 
-per column, domain-rule invalid-value detection, and a two-way duplicate check.
-
-"""
+"""Data diagnostics: missingness-mechanism test, domain-rule check, duplicate check."""
 import numpy as np
 import pandas as pd
 from scipy.stats import chi2_contingency
@@ -25,13 +18,8 @@ def _cramers_v(confusion_matrix: pd.DataFrame) -> float:
 
 def test_missingness_mechanism(df: pd.DataFrame, target_col: str, candidate_predictors: list) -> pd.DataFrame:
     """
-    For `target_col`'s missing-value indicator, test association against each column in
-    `candidate_predictors` via chi-square + Cramer's V. Returns one row per predictor,
-    sorted by association strength (strongest first).
-
-    Reading the verdict: a max Cramer's V well under 0.1 across every predictor reads as
-    MCAR (missing completely at random -- safe to impute simply). Anything well above
-    that (roughly >= 0.2) reads as MAR/MNAR, and the top predictor usually points at why.
+    Chi-square + Cramer's V between `target_col`'s missing indicator and each candidate predictor,
+    strongest first. Max V well under 0.1 reads as MCAR; roughly >= 0.2 as MAR/MNAR.
     """
     indicator = df[target_col].isna()
     rows = []
@@ -50,12 +38,8 @@ def test_missingness_mechanism(df: pd.DataFrame, target_col: str, candidate_pred
 
 def flag_invalid_values(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     """
-    Applies a dict of {column: {"min": ..., "max": ...}} domain rules (either bound is
-    optional) and converts violations to NaN **in place** on `df`. An "impossible but
-    not missing" value (an age of -3, a COMPAS decile score of 15) counts as missing
-    once this runs -- `.isna()` alone would never have caught it.
-
-    Returns a small report: how many violations were found per column.
+    Applies {column: {"min": ..., "max": ...}} domain rules (either bound optional), setting
+    violations to NaN in place. Returns the violation count per column.
     """
     report_rows = []
     for column, bounds in rules.items():
@@ -71,12 +55,7 @@ def flag_invalid_values(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
 
 
 def find_duplicates(df: pd.DataFrame, id_column: str = None) -> dict:
-    """
-    Checks duplicates two ways: exact row duplication, and (if `id_column` is given)
-    repeated identifiers. The two checks can disagree in general -- a duplicate case
-    re-entered with even one typo'd field would only be caught by the id check -- so
-    both are reported rather than trusting either one alone.
-    """
+    """Counts exact duplicate rows and (if `id_column` is given) repeated ids; the two can disagree."""
     result = {"exact_row_duplicates": int(df.duplicated().sum())}
     if id_column and id_column in df.columns:
         result["repeated_ids"] = int(df[id_column].duplicated().sum())
