@@ -14,10 +14,7 @@ def save_scores(path: str, row: dict) -> pd.DataFrame:
 
 
 def save_run(results_dir: str, run: str, config: dict, report_text: str) -> str:
-    """
-    Writes the run's settings and full report to `results_dir/run_<run>.txt` (the folder is
-    created if needed) and returns the path.
-    """
+    """Writes the run's settings and report to `results_dir/run_<run>.txt` and returns the path."""
     os.makedirs(results_dir, exist_ok=True)
     path = os.path.join(results_dir, f"run_{run}.txt")
 
