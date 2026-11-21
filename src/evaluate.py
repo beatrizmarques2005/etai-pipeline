@@ -1,8 +1,4 @@
-"""
-Evaluation on the development set: stratified k-fold cross-validation of the whole pipeline
-on several metrics, out-of-fold probabilities and reports, a fairness check and a paired
-comparison of two models. The locked test set is never used here.
-"""
+"""Evaluation on the development set: CV, out-of-fold reports, fairness check, paired test."""
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -11,10 +7,7 @@ from sklearn.model_selection import cross_validate
 
 
 def build_scorers(metrics: list) -> dict:
-    """
-    {name: scorer} for scikit-learn metric names (`accuracy`, `roc_auc`, ...), plus `fbeta_<beta>`
-    (e.g. `fbeta_2`: recall weighted twice as much as precision).
-    """
+    """{name: scorer} for scikit-learn metric names, plus `fbeta_<beta>` (e.g. `fbeta_2`)."""
     scorers = {}
     for name in metrics:
         if name.startswith("fbeta_"):
@@ -26,15 +19,9 @@ def build_scorers(metrics: list) -> dict:
 
 def cross_validate_pipeline(pipeline, X, y, cv, scorers: dict, selection_metric: str, n_jobs: int = 1):
     """
-    Fits a fresh copy of `pipeline` (preprocessing included) on each fold's training part and
-    scores it on that fold's validation part, on every metric in `scorers`.
-
-    Returns (fold_scores, oof_proba):
-      - fold_scores: one row per fold with the validation score of every metric, plus the
-        train score and train-validation gap of `selection_metric`;
-      - oof_proba: out-of-fold probability of the positive class for every row, from the
-        fold model that did not train on it. `cv` must be a partition (each row validated
-        exactly once).
+    Cross-validates a fresh copy of `pipeline` on every metric in `scorers`.
+    Returns (fold_scores, oof_proba): per-fold scores (plus train score and gap of
+    `selection_metric`) and out-of-fold probabilities. `cv` must validate each row once.
     """
     scores = cross_validate(pipeline, X, y, cv=cv, scoring=scorers, return_train_score=True,
                             return_estimator=True, return_indices=True, n_jobs=n_jobs)
@@ -66,13 +53,9 @@ def cv_report(fold_scores: pd.DataFrame, metrics: list, selection_metric: str, t
 
 def corrected_paired_test(scores_a, scores_b, test_train_ratio: float) -> dict:
     """
-    Corrected paired t-test (Nadeau & Bengio, 2003) for two models scored on the same CV folds.
-    Folds share most of their training rows, so their scores are correlated and the plain
-    t-test is overconfident; the variance of the differences is inflated by `test_train_ratio`
-    (validation rows / training rows per fold: 1 / (k - 1) for k-fold).
-
-    Returns the mean difference (a - b), the folds where a scores higher, t and the two-sided
-    p-value.
+    Corrected paired t-test (Nadeau & Bengio, 2003) for two models on the same folds;
+    `test_train_ratio` is validation/training rows per fold (1 / (k - 1)).
+    Returns mean difference (a - b), folds a wins, t and the two-sided p-value.
     """
     diff = np.asarray(scores_a, dtype=float) - np.asarray(scores_b, dtype=float)
     k = len(diff)
@@ -94,10 +77,8 @@ def oof_classification_report(y_true, oof_proba, threshold: float = 0.5) -> str:
 def fairness_report(y_true, oof_proba, extras: pd.DataFrame, sensitive_attr: str = "race",
                     threshold: float = 0.5) -> str:
     """
-    False positive rate (share of people who did not reoffend but were predicted to) per
-    group of `sensitive_attr`, for the model's out-of-fold predictions and for COMPAS's own
-    score (`score_text` other than "Low" counts as predicted to reoffend), on the same rows.
-    Rows with an unknown group are reported as "unknown". A simple check, not a full audit.
+    False positive rate per `sensitive_attr` group, for the model's out-of-fold predictions and
+    COMPAS's own score (`score_text` other than "Low" = predicted to reoffend). A simple check.
     """
     df = extras.copy()
     df[sensitive_attr] = df[sensitive_attr].astype(object).fillna("unknown")
