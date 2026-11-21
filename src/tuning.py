@@ -1,10 +1,7 @@
 """
 Hyperparameter tuning with Optuna, and nested cross-validation.
 
-Tuning uses the development set only, and scores every candidate by cross-validation of the
-whole pipeline on the same folds, on the selection metric. The best trial's score is the
-maximum of many noisy scores, so it is optimistic; the honest estimate of "tune, then refit"
-comes from `nested_cross_validate`.
+The best trial's score is optimistic; `nested_cross_validate` gives the honest estimate.
 """
 import numpy as np
 import optuna
@@ -16,13 +13,8 @@ from sklearn.model_selection import cross_val_score
 def tune_pipeline(pipeline, X, y, cv, scorer, search_space: dict, n_trials: int,
                   random_state: int, n_jobs: int = 1):
     """
-    Runs an Optuna study (seeded TPE sampler) on (X, y). Each trial draws one value per entry
-    of `search_space` (`type`: int / float / categorical; keys are Pipeline parameter names,
-    e.g. `model__max_depth`), sets them on a fresh copy of `pipeline`, and returns its mean
-    CV score over `cv` with `scorer` (the selection metric).
-
-    Returns (best_pipeline, study): an unfitted copy of `pipeline` with the best trial's
-    hyperparameters, and the study with every trial (mean score and fold std).
+    Optuna study (seeded TPE) over `search_space` (Pipeline parameter name -> int/float/categorical
+    spec), scoring each trial by mean CV score. Returns (unfitted best_pipeline, study).
     """
     def objective(trial):
         params = {}
@@ -50,12 +42,8 @@ def tune_pipeline(pipeline, X, y, cv, scorer, search_space: dict, n_trials: int,
 def nested_cross_validate(pipeline, X, y, outer_cv, inner_cv, scorers: dict, selection_metric: str,
                           search_space: dict, n_trials: int, random_state: int, n_jobs: int = 1):
     """
-    Honest estimate of the tuning procedure. For every outer fold: tune on the outer-training
-    rows (`tune_pipeline` with `inner_cv`, on `selection_metric`), refit the best pipeline on
-    them, and score it on the outer-validation rows, which took no part in the tuning.
-
-    Returns (fold_scores, oof_proba), as `cross_validate_pipeline` does, with two extra kinds
-    of columns: `inner_best` (the tuning score inside that fold) and the hyperparameters chosen.
+    Per outer fold: tune on the training rows, refit, score on the held-out rows.
+    Returns (fold_scores, oof_proba) like `cross_validate_pipeline`, plus `inner_best` and the chosen params.
     """
     rows = []
     oof_proba = np.empty(len(X))
@@ -77,10 +65,7 @@ def nested_cross_validate(pipeline, X, y, outer_cv, inner_cv, scorers: dict, sel
 
 
 def tuning_report(study, nested_scores: pd.DataFrame, selection_metric: str, top: int = 5) -> str:
-    """
-    Best hyperparameters and top trials of the final study, plus the optimism check (mean
-    tuning score vs mean honest score over the outer folds), as text.
-    """
+    """Best hyperparameters, top trials and the optimism check (tuning vs nested score), as text."""
     trials = study.trials_dataframe(attrs=("number", "value", "params", "user_attrs"))
     trials = trials.rename(columns=lambda c: c.replace("params_", "").replace("user_attrs_", ""))
     trials = trials.rename(columns={"number": "trial", "value": f"mean {selection_metric}"})
