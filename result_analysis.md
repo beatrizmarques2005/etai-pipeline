@@ -1,116 +1,80 @@
 # Result Analysis
 
-## How results are evaluated
+`python main.py` scores one split (`random_state=42`). Weeks 2–3 therefore report the **mean ± std over 15 stratified 80/20 splits** (same splits for every configuration). From Week 4 on, scores are **stratified 5-fold CV on the development set** (the locked test set is never used); tuned scores are **nested CV** (30 Optuna trials, 5 inner folds, 5 outer folds). "Gap" = train − validation score.
 
-`python main.py` evaluates one train/test split (`random_state=42`). A single split can favour
-one model by chance, so each comparison below also reports the **mean ± standard deviation over
-15 stratified 80/20 splits**, with each split identical across all configurations.
+## Summary
+
+| Week | Main change | Best model | Score |
+|---|---|---|---|
+| 2 | Baseline pipeline | Logistic Regression | 0.672 ± 0.011 acc. |
+| 3 | EDA-driven preprocessing | Decision Tree | 0.675 ± 0.011 acc. |
+| 4 | Locked test set + 5-fold CV | Decision Tree | 0.675 ± 0.018 acc. (CV) |
+| 5 | Hyperparameter tuning | _to be filled in_ | |
+| 6 | Ensembles | AdaBoost | 0.682 ± 0.017 acc. (nested CV) |
+| 7 | Boosting + ROC-AUC | HistGradientBoosting | 0.728 ± 0.016 ROC-AUC (nested CV) |
+| 8 | XGBoost + feature selection | XGBoost, no selection | 0.728 ± 0.015 ROC-AUC (nested CV) |
+| 10 | Imputers | median kept | 0.721 ROC-AUC |
 
 ---
 
-## Weekly Experiments
-Accuracy is the mean ± std over 15 stratified 80/20 splits, unless stated otherwise.
+## Week 2 — Baseline
 
-### Summary
----
+Rows with missing values dropped; `pd.get_dummies()` on text columns.
 
-| Week | Main change | Best model | Mean test accuracy |
-|---|---|---|---:|
-| 2 | Baseline pipeline | Logistic Regression | 0.672 ± 0.011 |
-| 3 | EDA-driven preprocessing | Decision Tree | 0.675 ± 0.011 |
-| 4 | Locked test set + 5-fold CV | Decision Tree | 0.675 ± 0.018 (5-fold CV) |
-
-### Week 2 — Baseline
----
-
-**What changed:** rows with missing values dropped, `pd.get_dummies()` on text columns.
-
-| Model | Mean test accuracy |
+| Model | Accuracy |
 |---|---:|
 | Logistic Regression | **0.672 ± 0.011** |
 | Decision Tree | 0.662 ± 0.014 |
 
-**Findings:** `dropna()` removed 14% of the rows, mostly older defendants. Race labels were not cleaned, so the fairness check split the same group into several spellings.
+- `dropna()` removed 14% of rows, mostly older defendants.
+- Race labels were not cleaned, so one group appeared under several spellings in the fairness check.
 
-**Best model:** Logistic Regression.
+**Takeaway:** Logistic Regression is the baseline to beat.
 
-### Week 3 — EDA and preprocessing
----
+## Week 3 — EDA and preprocessing
 
-**What changed:** category cleanup, domain-rule checks, duplicate removal, median/mode imputation with MNAR flags, redundant columns dropped, target encoding and standard scaling.
+Category cleanup, domain-rule checks, duplicate removal, median/mode imputation with MNAR flags, redundant columns dropped, target encoding, standard scaling.
 
-| Model | Mean test accuracy | vs Week 2 |
+| Model | Accuracy | vs Week 2 |
 |---|---:|---:|
 | Logistic Regression | 0.670 ± 0.014 | −0.002 |
 | Decision Tree | **0.675 ± 0.011** | +0.013 |
 
-**Challenge answers:**
+- **Other imputers:** see Week 10.
+- **New data issue:** 6 rows had an `age_cat` contradicting `age` (now recomputed from `age`); 10 `score_text`/`decile_score` mismatches flagged (neither is a model feature).
+- Preprocessing helped the tree and left logistic regression unchanged. False-positive rates fell for both, mainly because more rows were kept and categories cleaned.
 
-1. **Other imputers:** ...
-2. **New data issue:** 6 rows had an `age_cat` that contradicted `age`. These are now recomputed from `age`. 10 `score_text`/`decile_score` mismatches were flagged; neither column is a model feature.
-3. **Week 2 vs Week 3:** preprocessing improved the decision tree and left logistic regression about the same. False-positive rates fell for both models, mainly because more rows were kept and categories were cleaned. 
+**Takeaway:** Decision Tree is best, by a small margin.
 
-**Best model:** Decision Tree.
+## Week 4 — Preprocessing inside the pipeline, cross-validation
 
-### Week 4 — Preprocessing inside the pipeline and cross-validation
----
+- Locked test set: 20%, stratified, seed 42, 1,443 rows. Development set: 5,771 rows.
+- Target encoding now cross-fits (`TargetEncoder`); robust scaling replaces standard scaling.
+- 229 `c_charge_degree` gaps hidden as the string `"nan"` are now imputed and flagged.
 
-**What changed:** a locked final test set (20%, stratified, seed 42, 1,443 rows) is set aside and never scored.
-Models are now judged by stratified 5-fold cross-validation of the whole pipeline (preprocessing + model) on the
-5,771 development rows. 
-
-**Other changes**: target encoding switched to scikit-learn's cross-fitting `TargetEncoder`,
-standard scaling replaced by robust scaling, 229 `c_charge_degree` gaps that had been hidden as the string `"nan"`
-are now imputed and flagged.
-
-| Model | CV val. accuracy (mean ± std) | Mean train–val gap | F1 (class 1) | vs Week 3 |
+| Model | CV accuracy | Mean gap | F1 (class 1) | vs Week 3 |
 |---|---:|---:|---:|---:|
-| Logistic Regression | 0.672 ± 0.013 | +0.003 | 0.58 | +0.002 |
+| Logistic Regression | 0.672 �� 0.013 | +0.003 | 0.58 | +0.002 |
 | Decision Tree | **0.675 ± 0.018** | +0.010 | 0.60 | 0.000 |
 | Random Forest (untuned, 300 trees) | 0.650 ± 0.018 | **+0.083** | 0.60 | – |
 
-*"vs Week 3" is only indicative: Week 3 used 15 repeated 80/20 splits of all rows, Week 4 uses 5-fold CV on the
-development set only.*
+_"vs Week 3" is indicative only (15 splits of all rows vs 5-fold CV on the development set)._
 
-**Findings:**
+- Logistic Regression and the tree are tied (0.003 apart, under one std). Logistic Regression is the most stable (smallest gap, std ± 0.013).
+- The untuned forest overfits: 0.733 on training folds vs 0.650 on validation (gap 0.083, range 0.068–0.109 across folds). It needs limits such as `max_depth` or `min_samples_leaf`.
+- **Fairness (out-of-fold FPR, African-American / Caucasian):** Logistic Regression 0.26 / 0.13 (lowest), Random Forest 0.36 / 0.23 (highest), COMPAS 0.45 / 0.23.
 
-- **Logistic regression and the decision tree are tied.** They differ by 0.003, well under one standard deviation, and neither changed meaningfully from Week 3. 
-- **The untuned random forest overfits.** It scores 0.733 on the training folds but only 0.650 on validation, a gap of 0.083 in every fold (0.068–0.109). With default settings each tree grows until it memorises its training rows, so it needs limits such as `max_depth` or `min_samples_leaf` before it can compete.
-- **Logistic regression is the most stable model.** It has the smallest gap (+0.003) and the lowest spread across folds (± 0.013).
-- **Fairness:** on out-of-fold predictions, logistic regression has the lowest false-positive rates (African-American 0.26, Caucasian 0.13), well below COMPAS's own score (0.45 / 0.23). The random forest has the highest (0.36 / 0.23).
+**Takeaway:** Decision Tree, 0.675 ± 0.018, but its lead is smaller than its std.
 
-**Best model:** Decision Tree, 0.675 ± 0.018, by a margin smaller than its standard deviation.
+## Week 5 — Hyperparameter tuning
 
-### Week 5 — Hyperparameter tunning
----
+_To be filled in._ Optuna tuning with nested CV was introduced; results for all models are in the Week 6 and 7 tables.
 
-**What changed:** ...
+## Week 6 — Ensembles
 
-| Model | Mean test accuracy | vs Week 4 |
-|---|---:|---:|
-| ... | ... | ... |
+Accuracy, 5-fold CV on the development set.
 
-
-| Model | Default: CV mean ± std | Tuned: nested CV mean ± std | Tuning score (best trial) | Optimism | Chosen hyperparameters |
-|---|---|---|---|---|---|
-| Decision tree | ... | ... | ... | ... | ... |
-| Logistic regression | ... | ... | ... | ... | ... |
-| Random forest | ... | ... | ... | ... | ... |
-
-**Challenge answers:**
-- Which models gained from tuning, and is the gain larger than the fold-to-fold std?
-- Did tuning change which model is best? Which number would you report for your best model, and why?
-
-**Findings:** ...
-
-**Best model:** ...
-
-### Week 6 — Ensembles
----
-
-All rows from `python main.py` with that `model.type` (accuracy, 5-fold CV on the development set; tuning: 30 Optuna trials, 5 inner folds; nested CV = 5 outer folds). The test set was not used.
-
-| Model | Default: CV mean ± std (gap) | Tuned: nested CV mean ± std (gap) | Tuning score (best trial) | Chosen hyperparameters |
+| Model | Default CV (gap) | Tuned nested CV (gap) | Best trial | Chosen hyperparameters |
 |---|---|---|---|---|
 | Logistic regression | 0.672 ± 0.013 (+0.003) | — | — | `max_iter=2000` |
 | Decision tree | 0.610 ± 0.018 (+0.085) | 0.672 ± 0.017 (+0.013) | 0.679 | `max_depth=6`, `min_samples_leaf=101`, `criterion=gini` |
@@ -120,29 +84,21 @@ All rows from `python main.py` with that `model.type` (accuracy, 5-fold CV on th
 
 Corrected paired t-test (Nadeau & Bengio, `test_train_ratio=1/4`), tuned AdaBoost vs tuned decision tree: +0.010, 4/5 folds, t = 1.68, p = 0.17; vs logistic regression: +0.010, 3/5 folds, t = 1.01, p = 0.37.
 
-**Which model, and is its lead real?** 
+- **Is AdaBoost's lead real?** No. Its nested accuracy (0.682) leads the random forest by about 0.001, the oblique forest by 0.003 and the tuned tree and logistic regression by 0.010, all below the fold std (≈0.015). All five models end near 0.67–0.68: the limit is the information in the features, not the model.
+- **Hyperparameters fit each model:** AdaBoost uses shallow trees (depth 4) with a small learning rate and many rounds; the forest keeps deep trees (depth 22) and regularises leaves (min 42); the single tree needs heavy regularisation (depth 6, leaves of 101).
 
-AdaBoost has the best nested CV accuracy (0.682), but its lead is about 0.001 over the random forest, 0.003 over the oblique forest and 0.010 over the tuned tree and logistic regression, all smaller than the fold-to-fold std (≈0.015). The tuned ensembles are effectively tied, and all five models end near 0.67–0.68, which suggests the _limit is the information in these features rather than the model_. 
+**Takeaway:** the models tie around 0.67–0.68; AdaBoost is nominally best.
 
-**Do the hyperparameters fit each model?** 
+## Week 7 — Boosting and metric evaluation
 
-Yes!
-* AdaBoost chose shallow trees (depth 4) with a small learning rate and many rounds, i.e. weak learners combined slowly;
-* The random forest kept deep trees (max_depth 22) and let averaging control variance, only regularising the leaves (min 42 samples);
-* The single tree, with nothing to average its errors, needed heavy regularisation (depth 6, leaves of 101). 
+- New models: `gradient_boosting`, `hist_gradient_boosting`, `naive_bayes`.
+- Every run reports 8 metrics from out-of-fold **probabilities**; **ROC-AUC** is the selection metric (tuning maximises it, runs are ranked by it).
+- Each run adds a row to `results/runs.csv`, next to the no-model floor (dummy, same folds): **0.500**.
+- Gradient boosting became the default model. Board saved in [`data/prerun/week7_runs.csv`](data/prerun/week7_runs.csv).
 
-### Week 7 — Boosting and metric evaluation
----
+### Scoreboard (ROC-AUC)
 
-**What changed:** three new models (`gradient_boosting`, `hist_gradient_boosting`, `naive_bayes`); every run now reports 8 metrics from out-of-fold **probabilities**, with **ROC-AUC** as the selection metric (what tuning maximises and runs are ranked by); every run adds a row to the scoreboard `results/runs.csv`, next to the no-model floor (a dummy on the same folds). Gradient boosting is now the default model.
-
-All rows from `python main.py` with that `model.type` (ROC-AUC, 5-fold CV on the development set; tuning: 30 Optuna trials, 5 inner folds; nested CV = 5 outer folds). The test set was not used. The board is saved in [`data/prerun/week7_runs.csv`](data/prerun/week7_runs.csv).
-
-#### Scoreboard
-
-No-model floor (dummy, same folds): **0.500**.
-
-| Model | Untuned: CV mean ± std (gap) | Tuned: nested CV mean ± std (gap) | Tuning score (best trial) | Chosen hyperparameters |
+| Model | Untuned CV (gap) | Tuned nested CV (gap) | Best trial | Chosen hyperparameters |
 |---|---|---|---|---|
 | Dummy (floor) | 0.500 ± 0.000 | — | — | — |
 | Logistic regression | 0.718 ± 0.014 (+0.002) | — | — | `max_iter=2000` |
@@ -154,7 +110,9 @@ No-model floor (dummy, same folds): **0.500**.
 | Gradient boosting | 0.727 ± 0.015 (+0.022) | 0.727 ± 0.014 (+0.012) | 0.729 | `n_estimators=426`, `learning_rate=0.012`, `max_depth=3`, `min_samples_leaf=2`, `subsample=0.77` |
 | **HistGradientBoosting** | 0.717 ± 0.020 (+0.058) | **0.728 ± 0.016** (+0.012) | 0.729 | `max_iter=92`, `learning_rate=0.095`, `max_leaf_nodes=6`, `min_samples_leaf=84`, `l2_regularization=0.0008` |
 
-All 8 metrics (fold means; nested CV when tuned, threshold 0.5 for the threshold-dependent ones):
+### All 8 metrics
+
+Fold means; nested CV when tuned; threshold 0.5 for threshold-dependent metrics.
 
 | Model | Accuracy | Bal. acc. | Precision | Recall | F1 | F2 | ROC-AUC | PR-AUC |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -168,7 +126,9 @@ All 8 metrics (fold means; nested CV when tuned, threshold 0.5 for the threshold
 | Gradient boosting | 0.681 | 0.670 | 0.678 | 0.557 | 0.611 | 0.578 | 0.727 | 0.693 |
 | HistGradientBoosting | 0.684 | 0.674 | 0.681 | 0.565 | 0.617 | 0.585 | 0.728 | 0.692 |
 
-Corrected paired t-test (Nadeau & Bengio, `test_train_ratio=1/4`) on the scoreboard folds, HistGradientBoosting vs each model:
+### Paired t-tests: HistGradientBoosting vs each model
+
+Corrected paired t-test (Nadeau & Bengio, `test_train_ratio=1/4`), scoreboard folds.
 
 | vs | Mean diff | Folds won | t | p |
 |---|---:|---:|---:|---:|
@@ -181,40 +141,43 @@ Corrected paired t-test (Nadeau & Bengio, `test_train_ratio=1/4`) on the scorebo
 | Naive Bayes | +0.023 | 5/5 | 4.81 | 0.009 |
 | Dummy | +0.228 | 5/5 | 21.12 | < 0.001 |
 
-#### Selection metric
+### Why ROC-AUC
 
-**ROC-AUC.** It scores how well the model *ranks* defendants by risk without fixing a threshold, and the 0.5 cut-off the pipeline uses is arbitrary: in practice the threshold is a policy decision about the cost of a false positive (detaining someone who would not reoffend) versus a false negative. It also lets us compare the model directly with COMPAS's own 1–10 risk score, and with a base rate of 0.45 the classes are balanced enough that ROC-AUC is not misleading.
+It scores how well the model *ranks* defendants without fixing a threshold (the 0.5 cut-off is arbitrary; the real threshold is a policy choice between false positives and false negatives). It also compares directly with COMPAS's 1–10 score, and with a base rate of 0.45 the classes are balanced enough for it.
 
-#### Findings
+### Findings
 
-- **The boosters and forests are tied.** HistGradientBoosting has the best nested ROC-AUC (0.728), but it leads gradient boosting, AdaBoost and both forests by 0.001–0.003, far below the fold-to-fold std (≈0.015), and none of those tests is significant (p = 0.12–0.73). It does beat logistic regression, the tuned tree and Naive Bayes on every fold.
-- **Tuning matters most for the models that overfit by default.** The tree gains +0.107 and the forests +0.04 (their untuned gaps were +0.11 to +0.15); the boosters were already regularised by their defaults and gain at most +0.011.
-- **The metric changes the story.** Naive Bayes has the highest precision (0.743) but recall of only 0.245 at threshold 0.5, so it looks bad on F1 yet is only 0.02 behind on ROC-AUC: its probabilities rank reasonably but are badly calibrated. Its tuned `var_smoothing` (0.091) also sits at the edge of the search space (max 0.1), so the space could be widened.
-- **Fairness:** at threshold 0.5, HistGradientBoosting's out-of-fold false-positive rate is 0.29 for African-American and 0.15 for Caucasian defendants, lower than COMPAS (0.45 / 0.23) but still about twice as high for African-American defendants.
-- As in Week 6, every reasonable model ends near 0.72–0.73 ROC-AUC (≈0.68 accuracy): the limit is the information in the features, not the model.
+- **Boosters and forests tie.** HistGradientBoosting leads gradient boosting, AdaBoost and both forests by 0.001–0.003, far below the std (≈0.015); none of these tests is significant (p = 0.12–0.73). It beats logistic regression, the tuned tree and Naive Bayes on every fold.
+- **Tuning helps the overfitters.** The tree gains +0.107 and the forests +0.04 (untuned gaps +0.11 to +0.15); the boosters gain at most +0.011.
+- **Metric matters.** Naive Bayes has the best precision (0.743) but recall of 0.245 at 0.5, so its F1 is poor, yet it is only 0.02 behind on ROC-AUC: it ranks fine but is badly calibrated. Its tuned `var_smoothing` (0.091) sits at the edge of the search space (max 0.1).
+- **Fairness (threshold 0.5):** HistGradientBoosting FPR is 0.29 (African-American) / 0.15 (Caucasian) vs COMPAS 0.45 / 0.23, still about twice as high for African-American defendants.
+- As in Week 6, every reasonable model ends near 0.72–0.73 ROC-AUC (≈0.68 accuracy).
 
-**Best model:** HistGradientBoosting, nested CV ROC-AUC **0.728 ± 0.016** — tied with gradient boosting and AdaBoost, so any of the three is defensible; the number to report is the nested one, not the best-trial 0.729.
+**Takeaway:** HistGradientBoosting, nested ROC-AUC **0.728 ± 0.016**, tied with gradient boosting and AdaBoost. Report the nested number, not the best-trial 0.729.
 
-### Week 8 — XGBoost and feature selection
----
+## Week 8 — XGBoost and feature selection
 
-**What changed:** a new model, `xgboost` (`XGBClassifier`, gradient boosting with extra brakes inside each split), and a new learned pipeline step, `VoteSelector` (a random forest, gradient boosting and an L1 logistic regression each vote for features; features with at least `min_votes` votes are kept). The selector sits between preprocessing and the model, so it is re-fitted on the training rows of every fold. With tuning on, `select__min_votes` (1–3) is tuned together with the model and assessed by nested CV. XGBoost is now the model `main.py` runs. `python main.py` was run twice with tuned XGBoost, once with `feature_selection.enabled: false` and once with `true` (ROC-AUC, 5-fold CV on the development set; 30 Optuna trials, 5 inner folds; nested CV = 5 outer folds; the test set was not used). The scoreboard (Week 7 rows plus these two runs) is saved in [`data/prerun/week8_runs.csv`](data/prerun/week8_runs.csv).
+- New model `xgboost` (now the model `main.py` runs).
+- New pipeline step `VoteSelector`: a random forest, gradient boosting and an L1 logistic regression vote; features with at least `min_votes` votes are kept. It sits between preprocessing and the model and is re-fitted in every fold. With tuning on, `select__min_votes` (1–3) is tuned and assessed by nested CV.
+- Two tuned runs, `feature_selection.enabled` false and true (ROC-AUC). Board saved in [`data/prerun/week8_runs.csv`](data/prerun/week8_runs.csv). No-model floor: **0.500**.
 
-#### Scoreboard
+### Scoreboard (ROC-AUC)
 
-No-model floor (dummy, same folds): **0.500**.
-
-| Model | Untuned: CV mean ± std (gap) | Tuned: nested CV mean ± std (gap) | Tuning score (best trial) | `min_votes` | Features kept |
+| Model | Untuned CV (gap) | Tuned nested CV (gap) | Best trial | `min_votes` | Features kept |
 |---|---|---|---|---|---|
 | XGBoost, no selection | 0.724 ± 0.017 (+0.034) | **0.728 ± 0.015** (+0.011) | 0.729 | — | all 10 |
 | XGBoost + `VoteSelector` | 0.721 ± 0.013 (+0.027) | 0.725 ± 0.013 (+0.005) | 0.726 | 1 (chosen in all 5 outer folds and on all development rows) | 2 of 10: `age`, `priors_count` |
 | *Week 7 best: HistGradientBoosting* | *0.717 ± 0.020* | *0.728 ± 0.016* | *0.729* | — | all 10 |
 
-Chosen hyperparameters, no selection: `n_estimators=94`, `learning_rate=0.108`, `max_depth=7`, `min_child_weight=28`, `subsample=0.85`, `colsample_bytree=0.56`, `reg_lambda=0.24`, `reg_alpha=0.002`, `gamma=4.1`. With selection: `n_estimators=92`, `learning_rate=0.23`, `max_depth=3`, `min_child_weight=1.8`, `subsample=0.57`, `colsample_bytree=0.63`, `reg_lambda=0.08`, `reg_alpha=0.05`, `gamma=4.0`, `min_votes=1`.
+Chosen hyperparameters:
+- No selection: `n_estimators=94`, `learning_rate=0.108`, `max_depth=7`, `min_child_weight=28`, `subsample=0.85`, `colsample_bytree=0.56`, `reg_lambda=0.24`, `reg_alpha=0.002`, `gamma=4.1`.
+- With selection: `n_estimators=92`, `learning_rate=0.23`, `max_depth=3`, `min_child_weight=1.8`, `subsample=0.57`, `colsample_bytree=0.63`, `reg_lambda=0.08`, `reg_alpha=0.05`, `gamma=4.0`, `min_votes=1`.
 
-Selection metrics, tuned (nested CV): without selection accuracy 0.680, balanced accuracy 0.670, F1 0.614, PR-AUC 0.692; with selection 0.678, 0.668, 0.612, 0.689.
+Other tuned metrics (nested CV), accuracy / balanced accuracy / F1 / PR-AUC: without selection 0.680 / 0.670 / 0.614 / 0.692; with selection 0.678 / 0.668 / 0.612 / 0.689.
 
-#### Corrected paired t-tests (Nadeau & Bengio, `test_train_ratio=1/4`, same folds)
+### Corrected paired t-tests
+
+Nadeau & Bengio, `test_train_ratio=1/4`, same folds.
 
 | Comparison (a vs b) | Mean diff (a − b) | Folds a wins | t | p |
 |---|---:|---:|---:|---:|
@@ -224,50 +187,33 @@ Selection metrics, tuned (nested CV): without selection accuracy 0.680, balanced
 | Tuned XGBoost without selection vs Week 7 gradient boosting | +0.0004 | 3/5 | 0.28 | 0.79 |
 | Tuned XGBoost with selection vs Week 7 HistGradientBoosting | −0.003 | 2/5 | −0.89 | 0.42 |
 
-#### Which features does `VoteSelector` keep, and what does `min_votes` do?
+### What `VoteSelector` keeps
 
-Fitted on all development rows, only two features get any votes: `age` and `priors_count` (3 of 3 votes each). Every other feature gets 0 votes (the juvenile counts, `sex`, `c_charge_degree`, and the two missing-value indicators), except that `age_cat` gets 1 vote in one training fold (fold 2). So `min_votes=2` and `min_votes=3` keep the same two features, and `min_votes=1` keeps them too, except in that fold, where it adds `age_cat`. Untuned XGBoost scores 0.7206 / 0.7207 / 0.7208 for `min_votes` 1 / 2 / 3, i.e. the setting makes no real difference here. The nested CV picked `min_votes=1` in all five outer folds, but because 1, 2 and 3 are almost the same choice on this data, that is more like a tie than a real preference.
+- On all development rows only `age` and `priors_count` get votes (3 of 3 each); every other feature gets 0, except `age_cat` with 1 vote in fold 2.
+- So `min_votes` 1, 2 and 3 are almost the same choice. Untuned XGBoost scores 0.7206 / 0.7207 / 0.7208 for `min_votes` 1 / 2 / 3. The nested CV picked 1 in all five folds, which is a tie rather than a real preference.
 
-#### Findings
+### Findings
 
-- **XGBoost ties with the other boosters.** Tuned XGBoost (0.728 ± 0.015) is level with HistGradientBoosting (0.728), gradient boosting (0.727) and AdaBoost (0.727): differences of 0.0004 or less, p = 0.79–0.83. As in Weeks 6 and 7, the model family is not what limits the score.
-- **Selection did not improve the score, but it cost little.** With selection the model is 0.003 lower (0.725 vs 0.728), with a p-value of 0.42, so we cannot call it worse; the difference is within fold-to-fold noise (std ≈ 0.015). The test cannot prove the two are equal, but a model with 2 of 10 features is clearly *almost as good*.
-- **A two-feature model is almost as good as the ten-feature model.** `age` and `priors_count` carry nearly all of the usable signal. That means the other eight columns (sex, charge degree, juvenile counts, ...) add little for this model. A smaller model is easier to explain and cheaper to run.
-- **The train–validation gap shrinks with selection** (+0.005 vs +0.011 tuned; +0.027 vs +0.034 untuned) and the fold-to-fold std is a little lower (0.013 vs 0.015), so the selected model overfits less. This is a small effect.
-- **Why selection helped less than in the notebook.** In the notebook's test, 20 columns of random noise were added and selection recovered the lost score. COMPAS has only 10 columns, none of them noise, so there was almost nothing to remove, and removing 8 weak-but-real columns costs a little signal.
-- **Fairness:** the XGBoost model (no selection, 0.5 threshold) has an out-of-fold false-positive rate of 0.30 for African-American and 0.16 for Caucasian defendants (0.30 / 0.17 with selection), below COMPAS (0.45 / 0.23) but still about twice as high for African-American defendants. Selection does not change this picture: the selected features include `age` and `priors_count`, and the race gap comes from how those relate to race in the data, not from the removed columns.
+- **XGBoost ties with the other boosters.** Tuned XGBoost (0.728 ± 0.015) vs HistGradientBoosting (0.728), gradient boosting (0.727), AdaBoost (0.727): differences ≤ 0.0004, p = 0.79–0.83.
+- **Selection did not improve the score, but cost little.** 0.725 vs 0.728 (p = 0.42), within fold noise (std ≈ 0.015). The test cannot prove equality, but 2 features are clearly *almost as good* as 10.
+- **`age` and `priors_count` carry nearly all the usable signal.** A smaller model is easier to explain and cheaper to run.
+- **Selection shrinks the gap** (+0.005 vs +0.011 tuned; +0.027 vs +0.034 untuned) and the std a little (0.013 vs 0.015): a small effect.
+- **Why it helped less than in the notebook:** there, 20 noise columns were added and selection recovered the score. COMPAS has 10 columns and none is noise, so removing 8 weak-but-real ones costs a little signal.
+- **Fairness (threshold 0.5):** FPR 0.30 (African-American) / 0.16 (Caucasian) without selection, 0.30 / 0.17 with it, vs COMPAS 0.45 / 0.23. Selection does not change the picture: the gap comes from how `age` and `priors_count` relate to race in the data.
 
-**Would I keep selection on?** On this data, it is a judgement call. Selection gives a model that is as good within noise and uses 2 features instead of 10, so it is the better choice if simplicity and explainability matter (and a stable cheap model is useful). If we only want the highest ROC-AUC, the no-selection model is 0.003 ahead, although not significantly. The cost of keeping it on is about three extra model fits per fold. I would keep it on in the pipeline (the config switch makes it easy to turn off), and not claim it improves accuracy.
+**Keep selection on?** A judgement call. It gives an equally good model (within noise) with 2 features instead of 10, at about three extra model fits per fold; without it the score is 0.003 higher, not significantly. I keep it on (the config switch turns it off) and do not claim it improves accuracy.
 
-**Best model:** tuned XGBoost without selection, nested CV ROC-AUC **0.728 ± 0.015**, tied with HistGradientBoosting (0.728), gradient boosting and AdaBoost, so any is defensible; XGBoost with selection (0.725 ± 0.013, 2 features) is the simplest equally good option.
+**Takeaway:** tuned XGBoost without selection, nested ROC-AUC **0.728 ± 0.015**, tied with HistGradientBoosting (0.728), gradient boosting and AdaBoost. XGBoost with selection (0.725 ± 0.013, 2 features) is the simplest equally good option.
 
-<!--
+## Week 10 — Missing values
 
-## Challenges
+XGBoost (selection on, tuning off), same folds, four numeric imputers (ROC-AUC):
 
-Start with 1 and 2 (they fill the README table); the rest are for going further. For every change, keep the rules: development set only, whole pipeline, same folds.
-
-1. **Tune logistic regression.** Add a `logistic_regression` search space to `config.yaml`. Its main hyperparameter is the regularisation strength `C` (smaller = stronger regularisation): search it on a **log scale**, e.g. 0.0001 to 100. Does tuning help LR as much as it helped the tree? Why might a linear model have less to gain?
-2. **Tune the random forest.** Add a `random_forest` search space: `n_estimators`, `max_depth` (include `null` - YAML for `None` - as an option: use `categorical`), `min_samples_leaf`, `max_features` (e.g. `[\"sqrt\", \"log2\", 0.5, 1.0]`). A forest makes every trial ~100× slower: start with `n_trials: 15`, set `cv.n_jobs: -1`, and keep `n_estimators` modest while tuning. Compare the depth the forest chooses with the depth the tree chose - does it match your answer to Section 2.4?
-
-**Going further**:
-
-3. **Tune the preprocessing too.** Add `prep__numeric__impute__strategy: {type: categorical, choices: [\"median\", \"mean\"]}` to the tree's search space. Why is this still leak-free? Would it still be leak-free if the preprocessing were fitted once, outside the trials (the caching note in Section 5)?
-4. **Change what \"best\" means.** Set `cv.scoring` to `\"balanced_accuracy\"` or `\"f1\"` and tune again. Do the chosen hyperparameters change? What happens to recall of the positive class, and to the false positive rates in the fairness audit?
-
--->
-
-<!-- TEMPLATE
-### Week N — <topic>
----
-
-**What changed:** ...
-
-| Model | Mean test accuracy | vs Week N-1 |
+| Imputer | ROC-AUC | p vs median |
 |---|---:|---:|
-| ... | ... | ... |
+| median | 0.721 ± 0.013 | — |
+| KNN | 0.720 ± 0.012 | 0.86 |
+| iterative (MICE) | 0.721 ± 0.014 | 0.95 |
+| random forest | 0.721 ± 0.013 | 0.82 |
 
-**Findings:** ...
-
-**Best model:** ...
--->
+**Takeaway:** no imputer beats median (differences ≤ 0.0003 AUC, far below fold noise). Median is kept: simplest and fastest.
