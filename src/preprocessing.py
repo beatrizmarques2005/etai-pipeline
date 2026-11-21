@@ -1,14 +1,8 @@
 """
-Preprocessing
--------------
-
-Rule-based cleaning, training-only de-duplication, the feature/target split,
-the leak-safe preprocessor and the development/test split.
+Cleaning, feature/target split, leak-safe preprocessor and dev/test split.
 
 `clean_dataset` and `split_features_target` learn nothing from the data, so they are safe on
-any rows, including label-free data to predict. Everything learned from data (imputation,
-encoding, scaling) lives in `build_preprocessor`, inside the model Pipeline.
-    
+data to predict. Everything learned (imputation, encoding, scaling) is in `build_preprocessor`.
 """
 import numpy as np
 import pandas as pd
@@ -56,9 +50,8 @@ def _canonicalize_categories(df: pd.DataFrame, columns_and_maps: dict, placehold
 
 def clean_dataset(df: pd.DataFrame, diagnostics_config: dict) -> pd.DataFrame:
     """
-    Applies the cleaning rules in `diagnostics_config`: placeholder tokens and domain-rule
-    violations become NaN, category spellings are canonicalized and redundant columns are
-    dropped. Row-preserving and target-agnostic, so it runs unchanged on data to predict.
+    Placeholder tokens and rule violations become NaN, categories are canonicalized, redundant
+    columns dropped. Row-preserving and target-agnostic.
     """
     out = df.copy()
     placeholder_tokens = set(diagnostics_config.get("placeholder_tokens", []))
@@ -75,10 +68,7 @@ def clean_dataset(df: pd.DataFrame, diagnostics_config: dict) -> pd.DataFrame:
 
 
 def drop_duplicate_rows(df: pd.DataFrame, id_column: str = None) -> pd.DataFrame:
-    """
-    Training data only, before `split_dev_test`: drops exact duplicate rows and repeated ids
-    (keeping the first). Never call it on data to predict: every row needs a prediction.
-    """
+    """Training data only: drops duplicate rows and repeated ids (keeps the first)."""
     out = df.drop_duplicates()
     if id_column and id_column in out.columns:
         out = out.drop_duplicates(subset=id_column, keep="first")
@@ -95,10 +85,7 @@ def add_missingness_indicators(df: pd.DataFrame, mnar_indicator_sources: list) -
 
 
 def split_features_target(df: pd.DataFrame, data_config: dict, mnar_indicator_sources: list):
-    """
-    Returns (X, y, extras). `extras` holds the columns kept out of the features for auditing
-    (the sensitive attribute and COMPAS's own score). On label-free data `y` is None.
-    """
+    """Returns (X, y, extras); `extras` = sensitive attribute and COMPAS score, for auditing. `y` is None without a target."""
     target = data_config["target"]
     sensitive_attr = data_config["sensitive_attr"]
     drop_columns = data_config.get("drop_columns", [])
@@ -124,9 +111,7 @@ _ENCODERS = {
 }
 
 
-# Numeric imputers. "iterative" is MICE with one completed dataset; "random_forest" is the
-# missForest idea (each column predicted from the others by a random forest). Both learn only
-# from the feature columns, never from the target, so they also run on data to predict.
+# "iterative" is MICE; "random_forest" is the missForest idea. Neither uses the target.
 _NUMERIC_IMPUTERS = {
     "median": lambda cfg, seed: SimpleImputer(strategy="median"),
     "mean": lambda cfg, seed: SimpleImputer(strategy="mean"),
@@ -141,10 +126,8 @@ _NUMERIC_IMPUTERS = {
 
 def build_preprocessor(preprocessing_config: dict) -> ColumnTransformer:
     """
-    Builds the unfitted ColumnTransformer described by `preprocessing_config`: scaling and
-    imputation for numeric columns (scaled first, so distance-based imputers compare columns
-    on one scale; scalers ignore NaN when fitting), imputation and encoding for categorical
-    ones, and the missingness flags passed through. Every encoder tolerates unseen categories.
+    Unfitted ColumnTransformer: numeric columns scaled then imputed (scaled first so distance-based
+    imputers compare one scale), categoricals imputed and encoded, missingness flags passed through.
     """
     imputation = preprocessing_config.get("imputation", {})
     scaler_factory = _SCALERS[preprocessing_config["scaler"]]
@@ -172,9 +155,5 @@ def build_preprocessor(preprocessing_config: dict) -> ColumnTransformer:
 
 
 def split_dev_test(X, y, extras, test_size: float, random_state: int):
-    """
-    Stratified split into a development set, used for every decision, and a locked test set,
-    used only for the final assessment. Returns X_dev, X_test, y_dev, y_test, extras_dev,
-    extras_test, row-aligned.
-    """
+    """Stratified split into a development set and a locked test set. Returns X, y, extras for each."""
     return train_test_split(X, y, extras, test_size=test_size, random_state=random_state, stratify=y)
